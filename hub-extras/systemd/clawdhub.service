@@ -1,0 +1,16 @@
+[Unit]
+Description=Clawdmeter WiFi hub, serves Claude Code usage to the displays
+After=network-online.target avahi-daemon.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/clawdhub/daemon
+ExecStart=/opt/clawdhub/.venv/bin/python /opt/clawdhub/daemon/hub.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
