@@ -326,3 +326,11 @@ Bash daemon (`daemon/claude-usage-daemon.sh`) reads OAuth token, polls Anthropic
 - `...0002` RX — daemon writes JSON usage payload here.
 - `...0003` TX — firmware notifies ack/nack (daemon doesn't subscribe).
 - `...0004` REQ — firmware fires `0x01` notify in `onSubscribe` if `has_received_data` is false. Daemon subscribes via `setsid bash -c "stdbuf -oL dbus-monitor … | awk …"`; awk drops a flag file the inner loop picks up. See the `feedback_dbus_monitor_pipe` memory for the three subtle gotchas (pipe buffering, busctl-exits race, `wait` blocking on pipeline jobs).
+
+## This fork: WiFi hub and several accounts
+
+The display talks to an always-on hub over WiFi (`daemon/hub.py`, envs `waveshare_amoled_216_wifi` and `waveshare_amoled_216_c6_wifi`) instead of BLE, and can show up to three accounts, switched with a swipe (`firmware/src/slots.*`, `config_dirs = path:label` in the daemon config).
+
+Read [`docs/ai/wifi-hub-and-accounts.md`](docs/ai/wifi-hub-and-accounts.md) before touching accounts or the token refresher: OAuth refresh tokens rotate, so two machines can never share one session, and an expired account vanishes from the display without any message. The earlier BLE mount and its hardware traps are in [`docs/ai/ble-setup-hardware-notes.md`](docs/ai/ble-setup-hardware-notes.md).
+
+Never put credentials, tokens or firmware images built on a personal machine in the repository.
