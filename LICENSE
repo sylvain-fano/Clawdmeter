@@ -1,0 +1,60 @@
+Clawdmeter (sylvain-fano fork) - licensing
+
+This repository mixes material under three different regimes. Read all three
+before you reuse anything.
+
+1. This fork's own contributions: MIT License (below)
+
+   The code and documentation added or changed by commits authored by
+   Sylvain Fano in this repository (see `git log --author="Sylvain Fano"`),
+   notably the multi-account support (firmware/src/slots.*, the account paging
+   in the daemon and the hub), the S3 WiFi build, hub-extras/, docs/ai/ and
+   the CI workflow.
+
+2. Upstream code: no license granted
+
+   Everything else was written by the authors of
+   https://github.com/HermannBjorgvin/Clawdmeter and of the forks this one
+   builds on (https://github.com/TheOriUHD/Clawdmeter, and the parts credited
+   in README.md). Upstream deliberately publishes no license, because the
+   project bundles third-party proprietary assets (see 3). Copyright in that
+   code stays with its authors; this file grants no rights to it.
+
+3. Third-party assets: not licensed, not covered by anything here
+
+   - The Anthropic brand fonts (Tiempos, Styrene) compiled into
+     firmware/src/font_tiempos_*.c and firmware/src/font_styrene_*.c, which
+     upstream uses without a license. (font_mono_*.c is DejaVu Sans Mono,
+     under its own free license.)
+   - The Clawd mascot art and animations (firmware/src/splash_animations.h,
+     firmware/src/clawd_still.h, firmware/src/logo.h,
+     research/clawd-official/, assets/readme/, screenshots/), copyright
+     Anthropic PBC.
+   - Lucide icons (https://lucide.dev), under their own ISC/MIT license.
+
+   Claude, Claude Code and Anthropic are trademarks of Anthropic PBC. This
+   project is not affiliated with, endorsed by or sponsored by Anthropic.
+
+-------------------------------------------------------------------------------
+
+MIT License
+
+Copyright (c) 2026 Sylvain Fano
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
