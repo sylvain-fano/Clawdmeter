@@ -277,9 +277,18 @@ async def main() -> None:
             now = time.time()
             if now - last_poll >= daemon.POLL_INTERVAL:
                 last_poll = now
-                payload, dead = await daemon.poll_active()
-                if payload is None and dead:
+                # poll_slots returns one payload per labelled account (tagged
+                # with an "id"), or a single one when only one is configured.
+                slots, dead = await daemon.poll_slots()
+                payload = None
+                if not slots and dead:
                     payload = {"ok": False}
+                elif slots:
+                    # The first account stays at the root, so a firmware that
+                    # ignores "acc" behaves exactly as before.
+                    payload = dict(slots[0])
+                    if len(slots) > 1:
+                        payload["acc"] = slots
                 if payload is not None:
                     daemon.record_history(payload)
                     daemon.LAST_USAGE = payload

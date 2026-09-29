@@ -217,12 +217,14 @@ def _read_token_keychain() -> str | None:
     return _extract_access_token(_decode_keychain_blob(out.stdout))
 
 
-def read_config_dirs() -> list[Path]:
-    """Claude config dirs to poll, from the `config_dirs` option (comma list).
+# The firmware files its account pages by this label, held in a 12-byte buffer:
+# short and pure ASCII are mandatory.
+SLOT_ID_MAX = 11
+DEFAULT_SLOT = "main"
 
-    Defaults to [~/.claude] so existing single-plan setups are unchanged. ~ is
-    expanded. Mirrors the Linux bash daemon's read_config_dirs.
-    """
+
+def read_option(name: str) -> str:
+    """Raw value of a `key = value` config line, or "" when absent."""
     raw = ""
     try:
         if CONFIG_FILE.exists():
@@ -231,14 +233,51 @@ def read_config_dirs() -> list[Path]:
                 if "=" not in line:
                     continue
                 key, val = line.split("=", 1)
-                if key.strip().lower() == "config_dirs":
+                if key.strip().lower() == name:
                     raw = val.strip()
     except OSError:
         pass
+    return raw
+
+
+def _slug(raw: str) -> str:
+    """A label the firmware can hold and draw: ASCII, short."""
+    return re.sub(r"[^A-Za-z0-9 _-]", "", raw).strip()[:SLOT_ID_MAX]
+
+
+def read_label() -> str:
+    """This machine's label: the name of its page on the display."""
+    return _slug(read_option("label")) or DEFAULT_SLOT
+
+
+def read_config_dir_specs() -> list[tuple[Path, str | None]]:
+    """Directories to poll, each with an optional `:label` suffix.
+
+    `config_dirs = ~/.claude:work, ~/.claude-personal:personal` gives one page
+    per account on the display. Without labels the original behaviour applies:
+    poll every directory and show whichever plan is active.
+    """
+    raw = read_option("config_dirs")
     if not raw:
-        return [DEFAULT_CONFIG_DIR]
-    dirs = [Path(p.strip()).expanduser() for p in raw.split(",") if p.strip()]
-    return dirs or [DEFAULT_CONFIG_DIR]
+        return [(DEFAULT_CONFIG_DIR, None)]
+    out: list[tuple[Path, str | None]] = []
+    for part in (s.strip() for s in raw.split(",")):
+        if not part:
+            continue
+        label = None
+        # A label after a colon, but not the colon of a Windows drive letter,
+        # which can only sit at position 1.
+        if ":" in part[2:]:
+            head, _, tail = part.rpartition(":")
+            if head.strip():
+                part, label = head.strip(), _slug(tail)
+        out.append((Path(part).expanduser(), label or None))
+    return out or [(DEFAULT_CONFIG_DIR, None)]
+
+
+def read_config_dirs() -> list[Path]:
+    """Config directories to poll, without their labels."""
+    return [d for d, _label in read_config_dir_specs()]
 
 
 def read_token_for(config_dir: Path) -> str | None:
@@ -1090,6 +1129,70 @@ class PlanSelector:
 
 # Module-level so the active-plan state survives reconnects.
 _SELECTOR = PlanSelector()
+
+
+async def poll_slots(selector: PlanSelector = _SELECTOR) -> tuple[list[dict], bool]:
+    """The payloads to push this cycle, one per account page, plus ``all_dead``.
+
+    With labelled directories each account gets its own payload (tagged with an
+    ``id``), so a single machine can feed several pages of the display. Without
+    labels this is exactly the original path: one payload, the active plan's.
+    """
+    specs = read_config_dir_specs()
+    payloads: dict[Path, dict] = {}
+    sessions: dict[Path, int] = {}
+    any_live = False
+    for d, _label in specs:
+        token = read_token_for(d)
+        if not token:
+            log(f"No token in {d}; skipping")
+            continue
+        try:
+            payload = await poll_usage_endpoint(token)
+            if payload is not None:
+                _note_usage_source("endpoint")
+            else:
+                payload = await poll_api(token)
+                if payload is not None:
+                    _note_usage_source("headers")
+        except TokenExpired:
+            log(f"Token in {d} expired/invalid; skipping")
+            continue
+        except Exception as e:
+            log(f"Poll error for {d}: {type(e).__name__}: {e}")
+            any_live = True          # not an auth failure: retry without showing "no data"
+            continue
+        any_live = True
+        if payload is not None:
+            payloads[d] = payload
+            sessions[d] = int(payload.get("s", 0) or 0)
+
+    labelled = [(d, l) for d, l in specs if l]
+    if len(labelled) > 1:
+        out = []
+        for d, l in labelled:
+            if d in payloads:
+                tagged = dict(payloads[d])
+                tagged["id"] = l
+                out.append(tagged)
+        return out, (not any_live)
+
+    if not payloads:
+        return [], (not any_live)
+    active = selector.choose(sessions)
+    if len(specs) > 1:
+        log(f"Active plan: {active} (s={sessions[active]})")
+    one = dict(payloads[active])
+    label = labelled[0][1] if labelled else read_label()
+    if label != DEFAULT_SLOT:
+        one["id"] = label
+    return [one], False
+
+
+def slot_labels() -> list[str]:
+    """Every account page this machine is responsible for."""
+    labelled = [l for _d, l in read_config_dir_specs() if l]
+    return labelled if len(labelled) > 1 else [labelled[0] if labelled else read_label()]
 
 
 async def poll_active(selector: PlanSelector = _SELECTOR) -> tuple[dict | None, bool]:

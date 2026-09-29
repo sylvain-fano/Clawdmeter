@@ -16,6 +16,11 @@
 #   - Unset (default) = just ~/.claude, unchanged single-plan behavior.
 #   - install.sh can detect your ~/.claude* dirs and fill this in for you.
 # config_dirs = ~/.claude, ~/.claude-work
+#
+# Give each dir a label to get one PAGE per account instead. The display shows
+# the label in its title and you swipe between accounts (needs the WiFi hub and
+# the *_wifi firmware, see hub-extras/README.md). Labels are ASCII, max 11 chars.
+# config_dirs = ~/.claude:work, ~/.claude-personal:personal
 
 # Play a sound on the device when your 5-hour session limit resets, so you know
 # you can use Claude again without watching the screen.
