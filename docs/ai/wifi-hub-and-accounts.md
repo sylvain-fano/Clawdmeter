@@ -46,23 +46,27 @@ creates two holders, and whichever renews first revokes the other. This bit
 twice during the build.
 
 Each machine needs its own session (`claude auth login` from inside the
-container). `hub-extras/refresh-token.py` plus a 30-minute systemd timer (45
-minute margin) then keeps them alive. It reads `config_dirs`, so no account can
-be forgotten. The OAuth client ID and endpoint are undocumented (taken from the
-`iBrewerRoot` fork): if they change, a fresh `claude auth login` is the way out.
+container, once per account). The hub then keeps them alive itself
+(`AccountKeepers` in `hub.py`): shortly before a token expires it runs the
+unmodified `claude -p` once with that account's `CLAUDE_CONFIG_DIR`, and Claude
+Code renews its own token.
 
-## Silent failure to know about: the refresher
+**Never refresh the token from our own code.** An earlier version called the
+OAuth token endpoint directly with Claude Code's client ID. Anthropic's terms
+(code.claude.com/docs/en/legal-and-compliance, "Authentication and credential
+use") reserve subscription OAuth to its own apps and forbid third-party code
+from handling session tokens, so that script was removed. Renewal goes through
+the real CLI or not at all.
+
+## Silent failure to know about: expired accounts
 
 An account whose token expires **disappears from the display without any
 message**. The hub skips it (`Token in <dir> expired/invalid; skipping`),
 publishes a single account, so there is no `acc` key, so no pages at all. The
 swipe looks broken while the firmware is fine. Read
-`journalctl -u clawdhub-token` before suspecting the board.
-
-Seen once: `refresh-token.py` treated `~/.claude:work` as a path because the
-`:label` suffix of `config_dirs` was not stripped, so it maintained no token at
-all for 24 hours and nothing said so. Fixed, but the class of failure remains:
-it fails silently and only the journal speaks.
+`journalctl -u clawdhub | grep "Token keeper"` before suspecting the board. The
+usual causes: the `claude` CLI is not installed for the hub's user, or the
+account's refresh token was revoked (the same session used on another machine).
 
 ## Other traps met
 

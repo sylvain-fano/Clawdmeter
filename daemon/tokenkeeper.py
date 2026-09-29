@@ -65,11 +65,13 @@ class TokenKeeper:
         now = time.time() if now is None else now
         return now - self.last_run >= self.min_gap_s
 
-    async def run(self, reason: str, now: float | None = None) -> bool:
+    async def run(self, reason: str, now: float | None = None, config_dir: Path | None = None) -> bool:
         """Spawn one print-mode Claude Code call so it refreshes its own token.
 
-        Returns True when the call exited cleanly (the token was very likely
-        renewed); False when the CLI is missing, on cooldown, or failed.
+        `config_dir` points the call at another account's directory
+        (CLAUDE_CONFIG_DIR). Returns True when the call exited cleanly (the
+        token was very likely renewed); False when the CLI is missing, on
+        cooldown, or failed.
         """
         now = time.time() if now is None else now
         if os.environ.get("CLAWDMETER_NO_TOKEN_KEEPER"):     # tests / operators who never want a spawn
@@ -85,7 +87,10 @@ class TokenKeeper:
         env["CLAWDMETER_URL"] = "http://127.0.0.1:9"     # the hooks of this throwaway session go nowhere
         env.pop("CLAUDECODE", None)
         env.pop("CLAUDE_CODE_ENTRYPOINT", None)
-        self.log(f"Token keeper: {reason}; asking Claude Code to renew its token ({self.cli})")
+        if config_dir is not None:
+            env["CLAUDE_CONFIG_DIR"] = str(config_dir)
+        where = f" in {config_dir}" if config_dir is not None else ""
+        self.log(f"Token keeper: {reason}; asking Claude Code to renew its token{where} ({self.cli})")
         try:
             if self.cwd:
                 Path(self.cwd).mkdir(parents=True, exist_ok=True)

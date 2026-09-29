@@ -1,7 +1,0 @@
-[Unit]
-Description=Renew the Claude Code OAuth tokens used by the Clawdmeter hub
-After=network-online.target
-
-[Service]
-Type=oneshot
-ExecStart=/opt/clawdhub/.venv/bin/python /opt/clawdhub/refresh-token.py

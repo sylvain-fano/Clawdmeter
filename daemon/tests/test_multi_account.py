@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Tests for labelled accounts: one display page per config dir.
 
-Covers the `dir:label` syntax, poll_slots, and the hub's token refresher, which
-must strip the label before it looks for a credentials file.
+Covers the `dir:label` syntax, poll_slots, and the hub's per-account token
+keepers, which must ask Claude Code to renew each account in its own dir.
 
 Run: python -m pytest daemon/tests/test_multi_account.py -x -q
 """
 import asyncio
-import importlib.util
+import time
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -107,36 +107,47 @@ def test_slot_labels(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# hub-extras/refresh-token.py
+# hub.AccountKeepers
 # ---------------------------------------------------------------------------
 
-def _load_refresher():
-    path = Path(__file__).resolve().parents[2] / "hub-extras" / "refresh-token.py"
-    spec = importlib.util.spec_from_file_location("refresh_token", path)
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-    return m
+def _keeper_runs(tmp_path, monkeypatch, expiry_by_dir):
+    """Tick AccountKeepers once; return the config_dir each spawned run got."""
+    import daemon.hub as hub_mod
+    d = hub_mod.daemon
+    monkeypatch.setattr(d, "read_token_keeper_setting", lambda: "on")
+    monkeypatch.setattr(d, "read_config_dirs", lambda: list(expiry_by_dir))
+    monkeypatch.setattr(d, "read_token_expiry", lambda cd: expiry_by_dir[cd])
+    monkeypatch.setattr(d, "CONFIG_FILE", tmp_path / "config")
+    seen = []
+
+    async def fake_run(self, reason, now=None, config_dir=None):
+        seen.append(config_dir)
+        return True
+
+    monkeypatch.setattr(d.tk_mod.TokenKeeper, "run", fake_run)
+
+    async def go():
+        k = hub_mod.AccountKeepers()
+        k.tick(time.time())
+        await asyncio.gather(*k.tasks.values())
+
+    _run(go())
+    return seen
 
 
-def test_refresher_strips_the_label_before_looking_for_credentials(tmp_path, monkeypatch):
-    rt = _load_refresher()
-    cfg = tmp_path / "config"
-    cfg.write_text("config_dirs = ~/.claude:work, ~/.claude-personal:personal\n")
-    monkeypatch.setattr(rt, "DAEMON_CONFIG", cfg)
-    monkeypatch.delenv("CLAUDE_CREDENTIALS_PATH", raising=False)
-    assert rt.config_dirs() == [Path.home() / ".claude", Path.home() / ".claude-personal"]
+def test_keepers_renew_only_the_accounts_about_to_expire(tmp_path, monkeypatch):
+    now = time.time()
+    soon, later = Path("/x/soon"), Path("/x/later")
+    seen = _keeper_runs(tmp_path, monkeypatch, {soon: now + 60, later: now + 6 * 3600})
+    assert seen == [soon]
 
 
-def test_refresher_leaves_a_still_valid_token_alone(tmp_path):
-    import json
-    import time
+def test_keepers_leave_the_default_dir_to_claude_code_defaults(tmp_path, monkeypatch):
+    import daemon.hub as hub_mod
+    default = hub_mod.daemon.DEFAULT_CONFIG_DIR
+    seen = _keeper_runs(tmp_path, monkeypatch, {default: time.time() - 1})
+    assert seen == [None]
 
-    rt = _load_refresher()
-    cred = tmp_path / ".credentials.json"
-    blob = {"claudeAiOauth": {"accessToken": "a", "refreshToken": "r",
-                              "expiresAt": int((time.time() + 6 * 3600) * 1000)}}
-    cred.write_text(json.dumps(blob))
-    with patch.object(rt.httpx, "post") as post:
-        assert rt.refresh_one(cred) == 0
-    post.assert_not_called()
-    assert json.loads(cred.read_text()) == blob
+
+def test_keepers_skip_unknown_expiry(tmp_path, monkeypatch):
+    assert _keeper_runs(tmp_path, monkeypatch, {Path("/x/a"): None}) == []

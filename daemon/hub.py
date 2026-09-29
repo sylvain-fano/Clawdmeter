@@ -241,6 +241,38 @@ async def advertise_mdns(port: int):
     return (azc, info)
 
 
+class AccountKeepers:
+    """One token keeper per account directory.
+
+    A headless hub runs no Claude Code session, so nothing renews the stored
+    OAuth tokens. Instead of refreshing them itself (Anthropic's terms reserve
+    that to its own apps), the hub asks the unmodified `claude` CLI to run one
+    tiny call against each account shortly before its token expires. Calls run
+    as background tasks so the devices keep their heartbeat meanwhile.
+    """
+
+    def __init__(self) -> None:
+        self.keepers: dict[Path, daemon.tk_mod.TokenKeeper] = {}
+        self.tasks: dict[Path, asyncio.Task] = {}
+
+    def tick(self, now: float) -> None:
+        if daemon.read_token_keeper_setting() != "on":
+            return
+        for d in daemon.read_config_dirs():
+            if d in self.tasks and not self.tasks[d].done():
+                continue
+            exp = daemon.read_token_expiry(d)
+            if not daemon.tk_mod.due(exp, now):
+                continue
+            keeper = self.keepers.setdefault(
+                d, daemon.tk_mod.TokenKeeper(cwd=daemon.CONFIG_FILE.parent, log=log))
+            if not keeper.can_run(now):
+                continue
+            reason = "token expires soon" if exp > now else "token expired"
+            target = None if d == daemon.DEFAULT_CONFIG_DIR else d
+            self.tasks[d] = asyncio.create_task(keeper.run(reason, now, config_dir=target))
+
+
 async def main() -> None:
     ap = argparse.ArgumentParser(description="Clawdmeter WiFi hub")
     ap.add_argument("--port", type=int, default=DEVICE_PORT, help="device port")
@@ -270,6 +302,7 @@ async def main() -> None:
     for line in cc_mod.join_text(hook_port, token).splitlines():
         log("  " + line if line else "")
 
+    keepers = AccountKeepers()
     last_poll = 0.0
     last_stats = 0.0
     try:
@@ -277,6 +310,7 @@ async def main() -> None:
             now = time.time()
             if now - last_poll >= daemon.POLL_INTERVAL:
                 last_poll = now
+                keepers.tick(now)
                 # poll_slots returns one payload per labelled account (tagged
                 # with an "id"), or a single one when only one is configured.
                 slots, dead = await daemon.poll_slots()
