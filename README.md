@@ -12,7 +12,7 @@ Shift+Tab over BLE HID for Claude Code's voice mode and mode-toggle shortcuts.
 
 ## This fork: WiFi on the S3 2.16, and several accounts
 
-[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
+[![CI](https://github.com/sylvain-fano/Clawdmeter/actions/workflows/ci.yml/badge.svg)](https://github.com/sylvain-fano/Clawdmeter/actions/workflows/ci.yml)
 
 This branch of the fork chain (HermannBjorgvin, then TheOriUHD) adds two things.
 
@@ -35,7 +35,7 @@ Tested on hardware with a Waveshare ESP32-S3-Touch-AMOLED-2.16 (no battery)
 talking to a hub in a Proxmox LXC, two accounts. Other boards are untested.
 
 ```bash
-git clone https://github.com/OWNER/REPO && cd REPO
+git clone https://github.com/sylvain-fano/Clawdmeter && cd Clawdmeter
 ./flash.sh waveshare_amoled_216_wifi          # or grab a prebuilt image from Releases
 python3 daemon/hub.py                          # or install hub-extras/systemd/* on a server
 ```
