@@ -18,3 +18,12 @@ daemon/.venv/
 # Python bytecode cache
 __pycache__/
 *.pyc
+
+# Secrets and local config that must never be committed
+.env
+.env.*
+*.pem
+*.key
+.credentials.json
+companion.token
+firmware-ok/

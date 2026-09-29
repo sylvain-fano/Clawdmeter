@@ -10,6 +10,41 @@ Shift+Tab over BLE HID for Claude Code's voice mode and mode-toggle shortcuts.
 
 <img width="1179" height="994" alt="Usage meter" src="https://github.com/user-attachments/assets/83e54aea-0932-428f-94aa-b3ede3a360aa" />
 
+## This fork: WiFi on the S3 2.16, and several accounts
+
+[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
+
+This branch of the fork chain (HermannBjorgvin, then TheOriUHD) adds two things.
+
+- **WiFi build for the ESP32-S3 AMOLED 2.16.** Upstream only ships a WiFi build
+  for the C6 variant. `waveshare_amoled_216_wifi` reuses the S3 board port with
+  the same WiFi link (`link_wifi.cpp`) and drops NimBLE. The S3 has PSRAM, so
+  unlike the C6 the WiFi stack does not have to fight LVGL for memory.
+- **Several Claude accounts on one display.** Label your config dirs
+  (`config_dirs = ~/.claude:work, ~/.claude-personal:personal`) and the hub
+  publishes one payload per account. The display keeps a page per account,
+  **swipe right** to move to the next one with a slide animation, and the title
+  shows the account's label. Single-account setups are unchanged, pixel for
+  pixel. The page model follows the `slots` idea of
+  [egorshar's dual-account fork](https://github.com/egorshar/Clawdmeter).
+- **Headless hub kit** in [`hub-extras/`](hub-extras/README.md): systemd units and
+  a token refresher, because on a box where nobody runs Claude Code, nothing
+  renews the OAuth token and the display goes blank after about 8 hours.
+
+Tested on hardware with a Waveshare ESP32-S3-Touch-AMOLED-2.16 (no battery)
+talking to a hub in a Proxmox LXC, two accounts. Other boards are untested.
+
+```bash
+git clone https://github.com/OWNER/REPO && cd REPO
+./flash.sh waveshare_amoled_216_wifi          # or grab a prebuilt image from Releases
+python3 daemon/hub.py                          # or install hub-extras/systemd/* on a server
+```
+
+CI runs the daemon tests, builds the WiFi firmware for both boards, and scans for
+leaked secrets. Tagging `vX.Y.Z` publishes the images as a GitHub release. Read
+the [licensing warning](#licensing-gray-area-warning) before you fork this: it
+bundles Anthropic's fonts and mascot art, inherited from upstream.
+
 ## This fork
 
 [TheOriUHD/Clawdmeter](https://github.com/TheOriUHD/Clawdmeter) is a fork of

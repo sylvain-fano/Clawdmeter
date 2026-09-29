@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [main, multi-account]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Daemon tests (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install test dependencies
+        run: pip install pytest bleak httpx pillow zeroconf
+      - name: Run the suite
+        run: python -m pytest daemon/tests -q
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          v=8.21.2
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${v}/gitleaks_${v}_linux_x64.tar.gz" | tar xz gitleaks
+          sudo mv gitleaks /usr/local/bin/
+      - name: Scan the whole history
+        run: gitleaks detect --source . --redact --verbose
+
+  firmware:
+    name: Firmware (${{ matrix.env }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - env: waveshare_amoled_216_wifi
+            chip: esp32s3
+          - env: waveshare_amoled_216_c6_wifi
+            chip: esp32c6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            firmware/.pio/libdeps
+          key: pio-${{ matrix.env }}-${{ hashFiles('firmware/platformio.ini') }}
+          restore-keys: pio-${{ matrix.env }}-
+      - name: Install PlatformIO
+        run: pip install platformio
+      - name: Build
+        run: pio run -d firmware -e ${{ matrix.env }}
+      - name: Assemble a flashable factory image
+        run: |
+          set -eu
+          b=firmware/.pio/build/${{ matrix.env }}
+          boot_app0=$(find ~/.platformio/packages -name boot_app0.bin | head -1)
+          pip install esptool
+          mkdir -p out
+          esptool.py --chip ${{ matrix.chip }} merge_bin -o out/${{ matrix.env }}.factory.bin \
+            --flash_mode keep --flash_freq keep --flash_size keep \
+            0x0 "$b/bootloader.bin" 0x8000 "$b/partitions.bin" \
+            0xe000 "$boot_app0" 0x10000 "$b/firmware.bin"
+          cp "$b/firmware.bin" out/${{ matrix.env }}.app.bin
+          ls -l out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.env }}
+          path: out/*.bin
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, secrets, firmware]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.bin
+          generate_release_notes: true
