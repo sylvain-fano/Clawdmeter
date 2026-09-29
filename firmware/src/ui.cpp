@@ -1,4 +1,5 @@
 #include "ui.h"
+#include "slots.h"
 #include "splash.h"
 #ifdef CLAWD_LINK_WIFI
 #include "link_wifi.h"
@@ -1281,8 +1282,9 @@ static void init_usage_screen(void) {
     usage_container = make_body_group(level);
     level_pages[LEVEL_STATS] = page_stats;
     level_pages[LEVEL_USAGE] = usage_container;
-    for (int i = 0; i < LEVEL_PAGES; i++)
+    for (int i = 0; i < LEVEL_PAGES; i++) {
         lv_obj_add_event_cb(level_pages[i], global_click_cb, LV_EVENT_CLICKED, NULL);
+    }
 
     // Usage panels (shown when connected) live in a transparent body-size group
     // so they can be toggled against the pairing hint as one unit.
@@ -2432,15 +2434,27 @@ static void update_view_state(void) {
 static void render_title(bool force) {
     (void)force;
     if (!lbl_title) return;
-    char want[24];
+    char want[32];
     if (title_screen == SCREEN_SETTINGS) {
         strlcpy(want, "Settings", sizeof(want));
     } else if (title_level_page == LEVEL_STATS) {
         strlcpy(want, "Stats", sizeof(want));
     } else {
+        // Several accounts: the title says which one is shown, otherwise you
+        // cannot tell what you are looking at after a switch. One account: as before.
+        char acct[SLOT_ID_LEN + 3] = "";
+        if (slots_count() >= 2) {
+            Slot* s = slots_active();
+            if (s && s->id[0]) snprintf(acct, sizeof(acct), "%s  ", s->id);
+        }
         const uint8_t mode = settings_get().clock;
         if (mode == CLOCK_OFF || clock_base_epoch == 0) {
-            strlcpy(want, "Usage", sizeof(want));
+            snprintf(want, sizeof(want), "%s%s", acct, acct[0] ? "" : "Usage");
+            if (!want[0]) strlcpy(want, "Usage", sizeof(want));
+            if (acct[0]) {   // clock off: the label alone, no padding
+                size_t n = strlen(want);
+                while (n && want[n-1] == ' ') want[--n] = '\0';
+            }
         } else {
             const int fmt = (mode == CLOCK_12H) ? 12 : (mode == CLOCK_24H) ? 24 : clock_fmt;
             time_t cur = (time_t)(clock_base_epoch + (lv_tick_get() - clock_base_ms) / 1000);
@@ -2449,9 +2463,9 @@ static void render_title(bool force) {
             if (fmt == 12) {
                 int h12 = tmv.tm_hour % 12;
                 if (h12 == 0) h12 = 12;
-                snprintf(want, sizeof(want), "%d:%02d %s", h12, tmv.tm_min, tmv.tm_hour < 12 ? "AM" : "PM");
+                snprintf(want, sizeof(want), "%s%d:%02d %s", acct, h12, tmv.tm_min, tmv.tm_hour < 12 ? "AM" : "PM");
             } else {
-                snprintf(want, sizeof(want), "%02d:%02d", tmv.tm_hour, tmv.tm_min);
+                snprintf(want, sizeof(want), "%s%02d:%02d", acct, tmv.tm_hour, tmv.tm_min);
             }
         }
     }
@@ -2851,6 +2865,12 @@ static void begin_drag(int32_t dx, int32_t dy) {
             if (target >= 0 && target < LEVEL_PAGES) {
                 drag_target_page = target;
                 drag_in = level_pages[target];
+            } else if (level_page == LEVEL_USAGE) {
+                // No page on this side: the gesture used to do nothing but
+                // bounce the screen. It now moves to the next account, and the
+                // numbers change during the slide, which gives the finger the
+                // visual feedback a long press lacked.
+                ui_cycle_account(drag_sign);
             }
             level_dots_show();
         }
@@ -3073,6 +3093,75 @@ void ui_stats_update(const StatsData* st) {
     st_cur = *st;
     st_seen = true;
     render_stats_page();
+}
+
+// ---- Glissement entre comptes ----------------------------------------------
+//
+// Each account behaves like a page of its own, without duplicating the
+// widgets: they take tens of KB and exist only once. So the content is
+// translated off screen, the numbers are swapped, and it comes back in from the
+// other edge. It looks like a real slide; in memory nothing moved.
+//
+// The translation is a style, not a position: it does not interfere with the
+// placement of the elements, which stay aligned as the layout put them.
+
+static int acct_anim_dir = 0;
+
+static void acct_slide_exec(void* var, int32_t v) {
+    lv_obj_set_style_translate_x((lv_obj_t*)var, v, 0);
+}
+
+static void acct_slide_in(lv_anim_t* a) {
+    (void)a;
+    if (!usage_group) return;
+    // The content is out: swap the numbers while it is invisible, then bring it
+    // back in from the opposite edge.
+    Slot* s = slots_active();
+    if (s) {
+        ui_update(&s->data);
+        render_title(true);
+    }
+    const int32_t from = acct_anim_dir > 0 ? L.scr_w : -L.scr_w;
+    lv_obj_set_style_translate_x(usage_group, from, 0);
+    lv_anim_t in;
+    lv_anim_init(&in);
+    lv_anim_set_var(&in, usage_group);
+    lv_anim_set_values(&in, from, 0);
+    lv_anim_set_duration(&in, 160);
+    lv_anim_set_exec_cb(&in, acct_slide_exec);
+    lv_anim_set_path_cb(&in, lv_anim_path_ease_out);
+    lv_anim_start(&in);
+}
+
+// Next/previous account page. No effect below two accounts.
+// Called by the horizontal swipe and by the "account" serial command.
+bool ui_cycle_account(int dir) {
+    if (slots_count() < 2) return false;
+    if (!slots_cycle(dir)) return false;
+    Slot* s = slots_active();
+    if (!s) return false;
+
+    Serial.printf("slots: page active -> %s (%d/%d)\n",
+                  s->id, slots_active_index() + 1, slots_count());
+
+    if (!usage_group) {                 // not built yet: plain switch
+        ui_update(&s->data);
+        render_title(true);
+        return true;
+    }
+    // Slide out in the direction of the finger, back in from the opposite edge.
+    acct_anim_dir = dir;
+    lv_anim_delete(usage_group, acct_slide_exec);
+    lv_anim_t out;
+    lv_anim_init(&out);
+    lv_anim_set_var(&out, usage_group);
+    lv_anim_set_values(&out, 0, dir > 0 ? -L.scr_w : L.scr_w);
+    lv_anim_set_duration(&out, 140);
+    lv_anim_set_exec_cb(&out, acct_slide_exec);
+    lv_anim_set_path_cb(&out, lv_anim_path_ease_in);
+    lv_anim_set_completed_cb(&out, acct_slide_in);
+    lv_anim_start(&out);
+    return true;
 }
 
 void ui_show_level_page(int page) {

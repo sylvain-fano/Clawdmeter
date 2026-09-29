@@ -61,6 +61,7 @@ void ui_stats_update(const StatsData* st);
 
 // Usage-level pages: 0 = Stats, 1 = Usage. Snaps.
 void ui_show_level_page(int page);
+bool ui_cycle_account(int dir);
 
 // Run the full "needs you" alert once — glow, mascot, chime per the settings —
 // without a companion event (Settings → Alerts → Preview; serial "preview").

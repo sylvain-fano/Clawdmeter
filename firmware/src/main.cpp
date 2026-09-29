@@ -8,6 +8,7 @@
 #include "ui.h"
 #include "ble.h"
 #include "splash.h"
+#include "slots.h"
 #include "usage_rate.h"
 #include "idle.h"
 #include "idle_cfg.h"
@@ -187,15 +188,11 @@ static void parse_companion(JsonDocument& doc, CompanionData* cc, StatsData* st)
     }
 }
 
-// Parse a JSON line into UsageData (+ the companion/trend extras).
-static bool parse_json(const char* json, UsageData* out, CompanionData* cc, StatsData* st) {
-    JsonDocument doc;
-    DeserializationError err = deserializeJson(doc, json);
-    if (err) {
-        Serial.printf("JSON parse error: %s\n", err.c_str());
-        return false;
-    }
-    parse_companion(doc, cc, st);
+// Fills a UsageData from a JSON object. The source is either the payload root
+// or an entry of the "acc" array when the hub publishes several accounts: both
+// carry exactly the same keys.
+template <typename SrcT>
+static void parse_usage_fields(SrcT doc, UsageData* out) {
     out->has_usage = !doc["ok"].isNull();   // a companion-only beat has no usage keys at all
 
     out->session_pct = doc["s"] | 0.0f;
@@ -206,7 +203,7 @@ static bool parse_json(const char* json, UsageData* out, CompanionData* cc, Stat
     // key (no scoped limits / old daemon) → count 0 and the Weekly card keeps
     // its single bar; 0% is a real reading, never a "hidden" sentinel.
     out->scoped_weekly_count = 0;
-    for (JsonObject lim : doc["ws"].as<JsonArray>()) {
+    for (JsonObjectConst lim : doc["ws"].template as<JsonArrayConst>()) {
         if (out->scoped_weekly_count >= MAX_SCOPED_WEEKLY) break;
         const char* n = lim["n"] | "";
         if (!n[0]) continue;
@@ -227,6 +224,38 @@ static bool parse_json(const char* json, UsageData* out, CompanionData* cc, Stat
     out->clock_fmt = doc["tf"] | 24;
     out->ok = doc["ok"] | false;
     out->valid = true;
+}
+
+// Parse a JSON line into UsageData (+ the companion/trend extras).
+static bool parse_json(const char* json, UsageData* out, CompanionData* cc, StatsData* st) {
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, json);
+    if (err) {
+        Serial.printf("JSON parse error: %s\n", err.c_str());
+        return false;
+    }
+    parse_companion(doc, cc, st);
+    parse_usage_fields(doc, out);
+
+    // Multi-account: the hub publishes one entry per account under "acc", each
+    // tagged with an "id". Every account is filed in its own page; the root
+    // stays the active account, which keeps the single-account path unchanged.
+    JsonArrayConst accounts = doc["acc"].as<JsonArrayConst>();
+    if (!accounts.isNull() && accounts.size() > 0) {
+        for (JsonObjectConst a : accounts) {
+            const char* id = a["id"] | "";
+            bool is_new = false;
+            int idx = slots_upsert(id, &is_new);
+            Slot* sl = slots_at(idx);
+            if (!sl) continue;
+            parse_usage_fields(a, &sl->data);
+            sl->ok       = sl->data.ok;
+            sl->received = true;
+            sl->last_ms  = lv_tick_get();
+            if (is_new) Serial.printf("slots: new page '%s' (%d total)\n",
+                                      sl->id, slots_count());
+        }
+    }
     return true;
 }
 
@@ -376,6 +405,12 @@ static void check_serial_cmd() {
             else if (strcmp(cmd_buf, "stats") == 0) print_stats();
 #ifdef CLAWD_LINK_WIFI
             else if (strcmp(cmd_buf, "wifi") == 0) link_wifi_status();
+            // "account" cycles to the next account page, to check the switch
+            // without a finger (boards with no screenshot path only have serial).
+            else if (strcmp(cmd_buf, "account") == 0) {
+                if (!ui_cycle_account(+1))
+                    Serial.printf("account: %d page(s), rien a faire\n", slots_count());
+            }
             else if (strncmp(cmd_buf, "wifi ", 5) == 0) {
                 char* ssid = cmd_buf + 5;
                 char* sp = strchr(ssid, ' ');          // SSID, space, then the rest is the key
@@ -701,7 +736,14 @@ void loop() {
                     g_before, g_after, usage.session_pct);
                 if (splash_is_active()) splash_pick_for_current_rate();
             }
-            ui_update(&usage);
+            // With several accounts the screen shows the page the user picked,
+            // not the account the hub put at the root. With one account (or no
+            // "acc") slots_active() is null and the root payload is used, as
+            // it always was.
+            {
+                Slot* act = slots_count() > 0 ? slots_active() : nullptr;
+                ui_update(act ? &act->data : &usage);
+            }
             if (companion.present) ui_companion_update(&companion);
             if (stats.present)     ui_stats_update(&stats);
             ble_send_ack();
