@@ -5,12 +5,36 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User=clawdhub
+Group=clawdhub
 WorkingDirectory=/opt/clawdhub/daemon
 ExecStart=/opt/clawdhub/.venv/bin/python /opt/clawdhub/daemon/hub.py
 Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
+
+# The hub only needs its own home (/var/lib/clawdhub: Claude Code logins, the
+# hub's config and caches) writable; the rest of the system stays read-only.
+StateDirectory=clawdhub
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+CapabilityBoundingSet=
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target
