@@ -28,7 +28,7 @@ before you reuse anything.
      under its own free license.)
    - The Clawd mascot art and animations (firmware/src/splash_animations.h,
      firmware/src/clawd_still.h, firmware/src/logo.h,
-     research/clawd-official/, assets/readme/, screenshots/), copyright
+     assets/readme/, screenshots/), copyright
      Anthropic PBC.
    - Lucide icons (https://lucide.dev), under their own ISC/MIT license.
 

@@ -3,12 +3,12 @@
 ## Splash animations
 
 ```bash
-node convert_official_clawd.js
-node convert_official_clawd.js --verify /tmp/verify   # + per-animation PNGs
+node convert_official_clawd.js --in <assets dir>
+node convert_official_clawd.js --in <assets dir> --verify /tmp/verify   # + per-animation PNGs
 ```
 
-Converts the official Anthropic Clawd animations archived in
-`research/clawd-official/` (GIFs decoded via ImageMagick, the Laptop and
+Converts the official Anthropic Clawd animations (Anthropic's assets, not
+shipped in this repository; GIFs decoded via ImageMagick, the Laptop and
 Soccer Lottie exports read directly) into a single
 `firmware/src/splash_animations.h`:
 
@@ -21,9 +21,7 @@ Soccer Lottie exports read directly) into a single
 - contrast recolors (trumpet notes → ivory, magnifier fedora → gray) and the
   sailing-loop cross-match that defines the sailing scene's loop window
 
-See `research/clawd-official/CLAUDE.md` for asset provenance and the format
-details, and `--in` / `--out` to override paths. Rebuild firmware after
-running.
+`--out` overrides the output path. Rebuild firmware after running.
 
 ## Icons
 
